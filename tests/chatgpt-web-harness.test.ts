@@ -22,7 +22,7 @@ import { MAX_CHATGPT_WEB_TURN_RETRIES } from "../src/adapters/chatgpt-web/retry-
 import { ChatGptTextFeed, ChatGptTraceFeed, ChatGptTurnSessions, chatGptCompactionSourceExecutionKey, chatGptInstructionLineage, chatGptThreadOwnershipKey, chatGptTurnExecutionKey, chatGptTurnSessions } from "../src/adapters/chatgpt-web/turn-execution";
 import { callTurnBroker, TurnBroker, type BrokerToolResult } from "../src/adapters/chatgpt-web/turn-broker";
 import { ChatGptExternalTurnProgress, ChatGptMirroredTurnProgress, chatGptExternalProgressIsLive, chatGptExternalToolCallsAreInFlight } from "../src/adapters/chatgpt-web/turn-progress";
-import { CHATGPT_WEB_MCP_INVOCATION_TIMEOUT_MS, chatGptMcpInvocationTimeout } from "../src/adapters/chatgpt-web/mcp-server";
+import { CHATGPT_WEB_MCP_INVOCATION_TIMEOUT_MS, NATIVE_MCP_INSTRUCTIONS, chatGptMcpInvocationTimeout } from "../src/adapters/chatgpt-web/mcp-server";
 import { defaultBrokerEndpoint } from "../src/config";
 import { estimateChatGptWebUsage } from "../src/adapters/chatgpt-web/usage";
 import { decodeCompactionSummary, SUMMARY_PREFIX } from "../src/responses/compaction";
@@ -32,6 +32,14 @@ import type { AdapterEvent, CodexParsedRequest, CodexProviderConfig, CodexTool }
 const tempRoot = join(tmpdir(), `codex-chatgpt-web-harness-${process.pid}-${Date.now()}`);
 mkdirSync(tempRoot, { recursive: true });
 afterAll(() => rmSync(tempRoot, { recursive: true, force: true }));
+
+test("native MCP instructions preserve filesystem provenance across environments", () => {
+  expect(NATIVE_MCP_INSTRUCTIONS).toContain("Treat filesystem paths according to provenance");
+  expect(NATIVE_MCP_INSTRUCTIONS).toContain("separate filesystem namespaces");
+  expect(NATIVE_MCP_INSTRUCTIONS).toContain("explicitly transfer only the required data");
+  expect(NATIVE_MCP_INSTRUCTIONS).toContain("provenance rather than path syntax");
+  expect(NATIVE_MCP_INSTRUCTIONS).not.toContain("Coder");
+});
 
 test("current-turn MCP progress tracks active calls without claiming completion", async () => {
   const progress = new ChatGptExternalTurnProgress();
