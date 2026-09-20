@@ -66,6 +66,11 @@ test("Full-mode Pro prompts pass one stable turn token directly to native action
   expect(tokenMatches).toHaveLength(1);
   expect(compiled.text).toContain("[retired turn handle]");
   expect(transportOnly).toContain("For local work required by the task, use the attached Codex Native tools directly according to their declared descriptions and schemas.");
+  expect(transportOnly).toContain("Treat filesystem paths according to their provenance");
+  expect(transportOnly).toContain("separate filesystem namespaces");
+  expect(transportOnly).toContain("explicitly transfer only the required data");
+  expect(transportOnly).toContain("provenance rather than path syntax");
+  expect(transportOnly).not.toContain("Coder");
   expect(transportOnly).toContain("Call a Codex Native tool only when the latest active request requires a local effect or fresh local evidence that is not already present in the supplied context; otherwise answer the request directly without a tool call.");
   expect(transportOnly).toContain("Use actual Codex Native results as evidence for local observations and effects.");
   expect(transportOnly).toContain("A Codex Native MCP tool result may require context compaction. If it does, follow the compaction instructions in that result exactly.");
