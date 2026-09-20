@@ -1,0 +1,137 @@
+name: Patched Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: false
+        default: main
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: patched-windows-${{ github.repository }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Resolve source ref
+        id: source
+        shell: pwsh
+        env:
+          REQUESTED_REF: ${{ inputs.ref }}
+        run: |
+          if ($env:REQUESTED_REF) {
+            "ref=$env:REQUESTED_REF" >> $env:GITHUB_OUTPUT
+          } else {
+            "ref=$env:GITHUB_SHA" >> $env:GITHUB_OUTPUT
+          }
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.source.outputs.ref }}
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: launcher
+
+      - name: Prepare AVX2-independent Windows runtime
+        shell: pwsh
+        run: ./scripts/prepare-windows-baseline-bun.ps1 -Version 1.4.0 -GitHubEnv $env:GITHUB_ENV
+
+      - name: Verify source
+        run: bun run verify
+
+      - name: Build Windows package
+        run: bun run app:package
+
+      - name: Smoke-test package
+        run: bun run app:smoke
+
+      - name: Archive Windows runtime
+        shell: pwsh
+        run: Compress-Archive -Path launcher/build/runtime/* -DestinationPath codex-chatgpt-web-windows-amd64.zip -Force
+
+      - name: Create checksums
+        shell: pwsh
+        run: |
+          $files = @(
+            (Get-ChildItem launcher/artifacts -Filter *.exe -File),
+            (Get-Item codex-chatgpt-web-windows-amd64.zip)
+          )
+          if (-not ($files | Where-Object { $_.Extension -eq ".exe" })) {
+            throw "Windows installer was not produced"
+          }
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash -Algorithm SHA256 $file.FullName).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          [IO.File]::WriteAllLines(
+            (Join-Path $PWD "checksums-patched-windows.txt"),
+            $lines,
+            [Text.UTF8Encoding]::new($false)
+          )
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patched-windows-${{ github.run_id }}
+          path: |
+            launcher/artifacts/*.exe
+            codex-chatgpt-web-windows-amd64.zip
+            checksums-patched-windows.txt
+          if-no-files-found: error
+
+      - name: Publish rolling patched release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "patched-windows-latest"
+          $sha = (git rev-parse HEAD).Trim()
+          $short = $sha.Substring(0, 7)
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $installers = @(Get-ChildItem launcher/artifacts -Filter *.exe -File)
+          if ($installers.Count -eq 0) {
+            throw "Windows installer was not produced"
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f $tag $sha
+          git push --force origin "refs/tags/$tag"
+
+          $assets = @(
+            $installers.FullName
+            (Join-Path $PWD "codex-chatgpt-web-windows-amd64.zip")
+            (Join-Path $PWD "checksums-patched-windows.txt")
+          )
+          $title = "Codex Web GPT patched Windows latest ($version / $short)"
+          $notes = "Rolling patched Windows build from commit $sha. This fork automatically follows upstream and preserves the filesystem-provenance patch."
+
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @assets --repo $env:GITHUB_REPOSITORY --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Failed to upload rolling release assets" }
+            gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --prerelease --latest=false
+            if ($LASTEXITCODE -ne 0) { throw "Failed to update rolling release metadata" }
+          } else {
+            gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --prerelease --latest=false
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create rolling release" }
+          }
