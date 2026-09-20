@@ -51,6 +51,14 @@ const ZERO_RISK_MCP_INSTRUCTIONS = [
   "If a tool returns an error, report that error instead of changing the request_id.",
 ].join(" ");
 
+export const NATIVE_MCP_INSTRUCTIONS = [
+  "This connector bridges ChatGPT Web to the current outer Codex task and its filesystem.",
+  "Treat filesystem paths according to provenance: paths originating from the outer Codex task, its environment context, user file references, or Codex Native tool results belong to the outer Codex filesystem unless their source explicitly identifies a different environment.",
+  "External apps, remote MCP servers, cloud development environments, remote workspaces, containers, and other tool backends have separate filesystem namespaces. Never assume a path visible in one environment exists in another, and never use a remote or external tool to resolve a path owned by the outer Codex filesystem.",
+  "When data must cross an environment boundary, first read it from the source environment, explicitly transfer only the required data, and then use only a destination path confirmed by the destination environment.",
+  "Determine path ownership from provenance rather than path syntax. If ownership is ambiguous, establish the originating environment before attempting filesystem access.",
+].join(" ");
+
 function turnReferenceInput(contract: ChatGptMcpContract): Record<string, z.ZodString> {
   return contract === "safe"
     ? { request_id: turnTokenSchema }
@@ -449,7 +457,7 @@ export async function runChatGptMcpServer(options: {
   const contract = options.contract ?? "native";
   const server = new McpServer(
     { name: contract === "safe" ? "codex-safe" : "codex-native", version: VERSION },
-    contract === "safe" ? { instructions: ZERO_RISK_MCP_INSTRUCTIONS } : undefined,
+    { instructions: contract === "safe" ? ZERO_RISK_MCP_INSTRUCTIONS : NATIVE_MCP_INSTRUCTIONS },
   );
 
   const claimTurn = async (
