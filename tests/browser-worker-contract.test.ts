@@ -2331,7 +2331,7 @@ test("an abort while inserting a connector prompt clears the selected pill and p
   expect(connectorSelected).toBeFalse();
 });
 
-test("retained tool turns insert into the connector-bound composer without selecting it again", async () => {
+test("retained tool turns preserve the connector pill without selecting it again", async () => {
   const attachPrompt = (ChatGptBrowserWorker.prototype as unknown as {
     attachPrompt(
       page: unknown,
@@ -2347,16 +2347,39 @@ test("retained tool turns insert into the connector-bound composer without selec
 
   const calls: string[] = [];
   const composer = {
-    fill: async (value: string) => { expect(value).toBe(""); calls.push("fill"); },
+    fill: async () => { throw new Error("retained connector pill must not be cleared"); },
     focus: async () => { calls.push("focus"); },
+    press: async (key: string) => { expect(key).toBe(CHATGPT_COMPOSER_DOCUMENT_END_KEY); calls.push("press"); },
   };
   await attachPrompt.call({
     activeComposer: async () => composer,
+    connectorIsSelected: async () => true,
+    attachedPromptText: async () => "",
     selectConnector: async () => { throw new Error("retained connector must not be selected again"); },
-    insertPromptText: async (_page: unknown, text: string) => { expect(text).toBe("retained context"); calls.push("insert"); },
+    insertPromptText: async (_page: unknown, text: string) => { expect(text).toBe(" retained context"); calls.push("insert"); },
     assertPromptAttached: async () => { calls.push("assert"); },
   }, dialogPage("").page, "retained context", true, undefined, undefined, false, undefined, true);
-  expect(calls).toEqual(["fill", "focus", "insert", "assert"]);
+  expect(calls).toEqual(["focus", "press", "insert", "assert"]);
+});
+
+test("retained tool turns reselect a connector when the retained pill is missing", async () => {
+  const attachPrompt = (ChatGptBrowserWorker.prototype as unknown as {
+    attachPrompt(...args: unknown[]): Promise<void>;
+  }).attachPrompt;
+
+  const calls: string[] = [];
+  const composer = {
+    focus: async () => { calls.push("focus"); },
+    press: async (key: string) => { expect(key).toBe(CHATGPT_COMPOSER_DOCUMENT_END_KEY); calls.push("press"); },
+  };
+  await attachPrompt.call({
+    activeComposer: async () => composer,
+    connectorIsSelected: async () => false,
+    selectConnector: async () => { calls.push("select"); return composer; },
+    insertPromptText: async (_page: unknown, text: string) => { expect(text).toBe(" recovered context"); calls.push("insert"); },
+    assertPromptAttached: async () => { calls.push("assert"); },
+  }, dialogPage("").page, "recovered context", true, undefined, undefined, false, undefined, true);
+  expect(calls).toEqual(["select", "focus", "press", "insert", "assert"]);
 });
 
 test("image attachment readiness uses exact file tiles and not localized remove-button text", async () => {
@@ -2546,8 +2569,11 @@ test("Think attachment runs after fresh connector selection and rechecks retaine
     const ui = thinkSlashFixture();
     let connectorSelections = 0;
     const submitted: boolean[] = [];
+    if (retained) ui.state.connectors = ["Codex Native2"];
     const worker = {
       activeComposer: async () => ui.composer,
+      connectorIsSelected: async () => ui.state.connectors.includes("Codex Native2"),
+      attachedPromptText: async () => ui.state.draft,
       selectConnector: async () => { connectorSelections += 1; ui.state.connectors = ["Codex Native2"]; return ui.composer; },
       insertPromptText: async () => { submitted.push(ui.state.pressed); },
       assertPromptAttached: async () => {}, clearChatGptComposerState: async () => { ui.state.draft = ""; ui.state.connectors = []; },
@@ -3090,7 +3116,8 @@ test("unrelated ChatGPT alerts are not terminal", async () => {
 function toolConfirmationPage(options: {
   disappearAfterReads?: number;
   surface?: "dialog" | "card";
-  allowLabel?: "Allow once" | "Allow";
+  allowLabel?: string;
+  denyLabel?: string;
 } = {}): {
   page: Page;
   pressed: string[];
@@ -3098,7 +3125,7 @@ function toolConfirmationPage(options: {
   let reads = 0;
   let visible = true;
   const pressed: string[] = [];
-  const availableButtons = [options.allowLabel ?? "Allow once", "Deny"] as const;
+  const availableButtons = [options.allowLabel ?? "Allow once", options.denyLabel ?? "Deny"] as const;
   const button = (name: string | RegExp) => {
     const actualName = availableButtons.find(candidate => (
       typeof name === "string" ? candidate === name : name.test(candidate)
@@ -3117,7 +3144,7 @@ function toolConfirmationPage(options: {
   };
   const dialog = {
     filter: ({ hasText }: { hasText: string }) => {
-      expect(hasText).toBe("Allow ChatGPT to use Codex Native?");
+      expect(hasText).toBe("Codex Native");
       return dialog;
     },
     last: () => dialog,
@@ -3176,6 +3203,20 @@ test("connector auto-approval accepts the current shortened Allow action", async
 
   expect(await resolveChatGptToolConfirmation(fixture.page, "Codex Native", true)).toBeTrue();
   expect(fixture.pressed).toEqual(["Allow:Enter"]);
+});
+
+test("connector auto-approval keeps the English one-shot action contract", async () => {
+  const fixture = toolConfirmationPage({ allowLabel: "Allow once", denyLabel: "Deny" });
+
+  expect(await resolveChatGptToolConfirmation(fixture.page, "Codex Native", true)).toBeTrue();
+  expect(fixture.pressed).toEqual(["Allow once:Enter"]);
+});
+
+test("connector timeout denial keeps the English deny action contract", async () => {
+  const fixture = toolConfirmationPage({ allowLabel: "Allow once", denyLabel: "Deny" });
+
+  expect(await resolveChatGptToolConfirmation(fixture.page, "Codex Native", false, undefined, 2)).toBeTrue();
+  expect(fixture.pressed).toEqual(["Deny:Enter"]);
 });
 
 test("auto-approval recognizes the observed non-dialog approval card", async () => {
