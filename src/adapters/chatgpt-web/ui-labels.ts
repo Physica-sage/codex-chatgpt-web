@@ -1,9 +1,11 @@
+// Exact connector approval action labels. Keep persistent choices such as
+// "Always allow" / "始终允许" / "始終允許" out of the one-shot pattern.
+export const CHATGPT_TOOL_ALLOW_ONCE_LABEL_PATTERN = /^(?:Allow once|Allow|允许一次|仅允许一次|允许|允許一次|僅允許一次|允許)$/;
+export const CHATGPT_TOOL_DENY_LABEL_PATTERN = /^(?:Deny|Decline|拒绝|拒絕)$/;
+
 // ChatGPT UI message 7l/KIT, checked against its public locale resources on 2026-09-12.
 // These are exact terminal status labels, not translations inferred from model response text.
 // Locale module index: https://chatgpt.com/cdn/assets/70025534-vzdih64izbkkpexj.js
-export const CHATGPT_TOOL_ALLOW_ONCE_LABEL_PATTERN = /^Allow(?: once)?$/;
-export const CHATGPT_TOOL_DENY_LABEL_PATTERN = /^Deny$/;
-
 export const CHATGPT_STOPPED_THINKING_LABELS = [
   "ማሰብ ቆሟል", // am
   "توقّف التفكير", // ar
