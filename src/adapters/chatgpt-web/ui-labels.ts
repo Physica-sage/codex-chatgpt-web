@@ -1,6 +1,9 @@
 // ChatGPT UI message 7l/KIT, checked against its public locale resources on 2026-09-12.
 // These are exact terminal status labels, not translations inferred from model response text.
 // Locale module index: https://chatgpt.com/cdn/assets/70025534-vzdih64izbkkpexj.js
+export const CHATGPT_TOOL_ALLOW_ONCE_LABEL_PATTERN = /^Allow(?: once)?$/;
+export const CHATGPT_TOOL_DENY_LABEL_PATTERN = /^Deny$/;
+
 export const CHATGPT_STOPPED_THINKING_LABELS = [
   "ማሰብ ቆሟል", // am
   "توقّف التفكير", // ar

@@ -16,7 +16,7 @@ import {
   LEGACY_CHATGPT_CONNECTOR_NAMES,
 } from "../../config";
 import { estimateTokens } from "../../lib/token-estimate";
-import { CHATGPT_STOPPED_THINKING_LABELS } from "./ui-labels";
+import { CHATGPT_STOPPED_THINKING_LABELS, CHATGPT_TOOL_ALLOW_ONCE_LABEL_PATTERN, CHATGPT_TOOL_DENY_LABEL_PATTERN } from "./ui-labels";
 import type { CodexProviderConfig } from "../../types";
 import { parseDataUrl } from "../image";
 import {
@@ -889,17 +889,16 @@ export async function resolveChatGptToolConfirmation(
   onVisible?: () => Promise<void>,
 ): Promise<boolean> {
   const dialog = page.locator('[role="dialog"], [data-testid="tool-approval-card"]')
-    .filter({ hasText: `Allow ChatGPT to use ${appName}?` })
+    .filter({ hasText: appName })
     .last();
   if (!await dialog.isVisible().catch(() => false)) return false;
   await onVisible?.();
 
   if (autoApprove) {
-    // ChatGPT exposes either "Allow once" or the shorter "Allow" for the
-    // current one-shot approval. Keep the matcher anchored so persistent
-    // actions such as "Always allow" cannot match.
+    // Match only the localized one-shot action. Persistent choices such as
+    // "Always allow" / "始终允许" intentionally stay outside this exact pattern.
     const allowCurrentAction = dialog
-      .getByRole("button", { name: /^Allow(?: once)?$/ })
+      .getByRole("button", { name: CHATGPT_TOOL_ALLOW_ONCE_LABEL_PATTERN })
       .last();
     await allowCurrentAction.waitFor({ state: "visible", timeout: 10_000 });
     await allowCurrentAction.press("Enter");
@@ -914,7 +913,7 @@ export async function resolveChatGptToolConfirmation(
   }
 
   if (!await dialog.isVisible().catch(() => false)) return true;
-  const deny = dialog.getByRole("button", { name: "Deny", exact: true }).last();
+  const deny = dialog.getByRole("button", { name: CHATGPT_TOOL_DENY_LABEL_PATTERN }).last();
   await deny.waitFor({ state: "visible", timeout: 5_000 });
   await deny.press("Enter");
   await dialog.waitFor({ state: "hidden", timeout: 10_000 });
@@ -3474,7 +3473,7 @@ export class ChatGptBrowserWorker {
     const connectorMode = chatGptConnectorAttachmentMode(localTools, reuseConnector);
     let composerMutationStarted = false;
     try {
-      if (connectorMode !== "mention") {
+      if (connectorMode === "none") {
         const composer = await this.activeComposer(page, 30_000, abortSignal);
         // Playwright's multiline fill maps through an input action that ChatGPT's Lexical editor can
         // collapse to the first paragraph on the launcher-owned Electron surface. Clear separately,
@@ -3489,15 +3488,37 @@ export class ChatGptBrowserWorker {
         await this.assertPromptAttached(page, prompt, abortSignal);
         return;
       }
-      const selectedComposer = await this.selectConnector(
-        page,
-        captureDiagnostic,
-        catalogRefreshAvailable,
-        connectorAttemptBudget,
-        abortSignal,
-      );
-      // selectConnector owns and rolls back every mutation until it returns. From this point the
-      // attachment owns the selected pill and prompt text as one transaction.
+      let selectedComposer: Locator;
+      if (connectorMode === "retained") {
+        const retainedComposer = await this.activeComposer(page, 30_000, abortSignal);
+        const retainedConnectorSelected = await this.connectorIsSelected(retainedComposer, abortSignal);
+        const retainedDraft = retainedConnectorSelected
+          ? await this.attachedPromptText(page, abortSignal)
+          : "";
+        if (retainedConnectorSelected && retainedDraft.length === 0) {
+          selectedComposer = retainedComposer;
+          await captureDiagnostic?.("connector-retained-confirmed");
+        } else {
+          if (retainedDraft.length > 0) await this.clearChatGptComposerState(page);
+          selectedComposer = await this.selectConnector(
+            page,
+            captureDiagnostic,
+            catalogRefreshAvailable,
+            connectorAttemptBudget,
+            abortSignal,
+          );
+        }
+      } else {
+        selectedComposer = await this.selectConnector(
+          page,
+          captureDiagnostic,
+          catalogRefreshAvailable,
+          connectorAttemptBudget,
+          abortSignal,
+        );
+      }
+      // Preserve the selected connector pill while appending the prompt. Calling fill("") here
+      // removes ChatGPT's plugin pill from the Lexical composer and silently drops retained tools.
       composerMutationStarted = true;
       if (requireThink) {
         await setChatGptThinkMode(selectedComposer.locator("xpath=ancestor::form[1]"), true, captureDiagnostic, abortSignal);
