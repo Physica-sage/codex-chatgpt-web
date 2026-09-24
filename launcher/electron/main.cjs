@@ -1058,10 +1058,6 @@ async function start() {
   if (process.platform === "linux") {
     app.commandLine.appendSwitch("class", IS_DEV_PROFILE ? "codex-web-gpt-dev" : "codex-web-gpt");
   }
-  // Keep the embedded ChatGPT surface in English so browser automation paths that
-  // intentionally rely on stable English labels do not silently switch to the OS locale.
-  // This does not change the launcher UI language; it only controls Chromium locale.
-  app.commandLine.appendSwitch("lang", "en-US");
   app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
   app.commandLine.appendSwitch("remote-debugging-port", String(cdpPort));
 

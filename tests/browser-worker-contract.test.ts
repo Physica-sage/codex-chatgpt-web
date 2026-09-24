@@ -3132,18 +3132,25 @@ test("connector auto-approval accepts the current shortened Allow action", async
   expect(fixture.pressed).toEqual(["Allow:Enter"]);
 });
 
-test("connector auto-approval keeps the English one-shot action contract", async () => {
-  const fixture = toolConfirmationPage({ allowLabel: "Allow once", denyLabel: "Deny" });
+test("connector auto-approval accepts the Simplified Chinese one-shot action", async () => {
+  const fixture = toolConfirmationPage({ allowLabel: "允许一次", denyLabel: "拒绝" });
 
   expect(await resolveChatGptToolConfirmation(fixture.page, "Codex Native", true)).toBeTrue();
-  expect(fixture.pressed).toEqual(["Allow once:Enter"]);
+  expect(fixture.pressed).toEqual(["允许一次:Enter"]);
 });
 
-test("connector timeout denial keeps the English deny action contract", async () => {
-  const fixture = toolConfirmationPage({ allowLabel: "Allow once", denyLabel: "Deny" });
+test("connector auto-approval accepts the Traditional Chinese one-shot action", async () => {
+  const fixture = toolConfirmationPage({ allowLabel: "僅允許一次", denyLabel: "拒絕" });
+
+  expect(await resolveChatGptToolConfirmation(fixture.page, "Codex Native", true)).toBeTrue();
+  expect(fixture.pressed).toEqual(["僅允許一次:Enter"]);
+});
+
+test("connector timeout denial accepts the Simplified Chinese deny action", async () => {
+  const fixture = toolConfirmationPage({ allowLabel: "允许一次", denyLabel: "拒绝" });
 
   expect(await resolveChatGptToolConfirmation(fixture.page, "Codex Native", false, undefined, 2)).toBeTrue();
-  expect(fixture.pressed).toEqual(["Deny:Enter"]);
+  expect(fixture.pressed).toEqual(["拒绝:Enter"]);
 });
 
 test("auto-approval recognizes the observed non-dialog approval card", async () => {
